@@ -53,7 +53,7 @@ type AddOnResourceModel struct {
 	DefinitionID   types.String `tfsdk:"definition_id"`
 	OutputValues   types.List   `tfsdk:"output_values"`
 
-	TerraformNoCodeModule types.Object `tfsdk:"terraform_no_code_module"`
+	TerraformNoCodeModuleSource types.String `tfsdk:"terraform_no_code_module_source"`
 
 	InputVars                types.Set `tfsdk:"add_on_input_variables"`
 	AddOnDefinitionInputVars types.Set `tfsdk:"add_on_definition_input_variables"`
@@ -72,13 +72,6 @@ func (o outputValue) attrTypes() map[string]attr.Type {
 		"type":      types.StringType,
 		"value":     types.StringType,
 		"sensitive": types.BoolType,
-	}
-}
-
-func (r tfcNoCodeModule) attrTypes() map[string]attr.Type {
-	return map[string]attr.Type{
-		"source":  types.StringType,
-		"version": types.StringType,
 	}
 }
 
@@ -148,19 +141,9 @@ func (r *AddOnResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 					"Add-on Definition.",
 				Computed: true,
 			},
-			"terraform_no_code_module": &schema.SingleNestedAttribute{
+			"terraform_no_code_module_source": schema.StringAttribute{
+				Description: "The Terraform No Code Module source for the Add-on.",
 				Computed:    true,
-				Description: "Terraform Cloud no-code Module details.",
-				Attributes: map[string]schema.Attribute{
-					"source": &schema.StringAttribute{
-						Computed:    true,
-						Description: "Terraform Cloud no-code Module Source",
-					},
-					"version": &schema.StringAttribute{
-						Computed:    true,
-						Description: "Terraform Cloud no-code Module Version",
-					},
-				},
 			},
 			"definition_id": schema.StringAttribute{
 				Required:    true,
@@ -176,7 +159,7 @@ func (r *AddOnResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 			},
 			"output_values": schema.ListNestedAttribute{
 				Computed: true,
-				Description: "The output values of the Terraform run for the Add-on, sensitive values have type " +
+				Description: "The output values, stored by HCP Waypoint, of the Terraform run for the Add-on, sensitive values have type " +
 					"and value omitted.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
@@ -391,8 +374,9 @@ func (r *AddOnResource) Create(ctx context.Context, req resource.CreateRequest, 
 	plan.ProjectID = types.StringValue(projectID)
 	plan.OrgID = types.StringValue(orgID)
 	plan.Summary = types.StringValue(addOn.Summary)
-
 	plan.Description = types.StringValue(addOn.Description)
+	plan.TerraformNoCodeModuleSource = types.StringValue(addOn.TerraformNocodeModule.Source)
+
 	// set plan.description if it's not null or addOn.description is not empty
 	if addOn.Description == "" {
 		plan.Description = types.StringNull()
@@ -409,21 +393,6 @@ func (r *AddOnResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 	plan.Labels = labels
-
-	if addOn.TerraformNocodeModule != nil {
-		tfcNoCode := &tfcNoCodeModule{}
-		if addOn.TerraformNocodeModule.Source != "" {
-			tfcNoCode.Source = types.StringValue(addOn.TerraformNocodeModule.Source)
-		}
-		if addOn.TerraformNocodeModule.Version != "" {
-			tfcNoCode.Version = types.StringValue(addOn.TerraformNocodeModule.Version)
-		}
-		plan.TerraformNoCodeModule, diags = types.ObjectValueFrom(ctx, tfcNoCode.attrTypes(), tfcNoCode)
-		resp.Diagnostics.Append(diags...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-	}
 
 	// Display the reference to the Definition in the plan
 	if addOn.Definition != nil {
@@ -463,6 +432,7 @@ func (r *AddOnResource) Create(ctx context.Context, req resource.CreateRequest, 
 	} else {
 		plan.OutputValues = types.ListNull(types.ObjectType{AttrTypes: outputValue{}.attrTypes()})
 	}
+
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -556,6 +526,7 @@ func (r *AddOnResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	state.ProjectID = types.StringValue(projectID)
 	state.OrgID = types.StringValue(orgID)
 	state.Summary = types.StringValue(addOn.Summary)
+	state.TerraformNoCodeModuleSource = types.StringValue(addOn.TerraformNocodeModule.Source)
 
 	state.Description = types.StringValue(addOn.Description)
 	// set plan.description if it's not null or addOn.description is not empty
@@ -574,18 +545,6 @@ func (r *AddOnResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 	state.Labels = labels
-
-	if addOn.TerraformNocodeModule != nil {
-		tfcNoCode := &tfcNoCodeModule{
-			Source:  types.StringValue(addOn.TerraformNocodeModule.Source),
-			Version: types.StringValue(addOn.TerraformNocodeModule.Version),
-		}
-		state.TerraformNoCodeModule, diags = types.ObjectValueFrom(ctx, tfcNoCode.attrTypes(), tfcNoCode)
-		resp.Diagnostics.Append(diags...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-	}
 
 	state.CreatedBy = types.StringValue(addOn.CreatedBy)
 
@@ -625,6 +584,7 @@ func (r *AddOnResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	} else {
 		state.OutputValues = types.ListNull(types.ObjectType{AttrTypes: outputValue{}.attrTypes()})
 	}
+
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -717,6 +677,7 @@ func (r *AddOnResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	plan.ProjectID = types.StringValue(projectID)
 	plan.OrgID = types.StringValue(orgID)
 	plan.Summary = types.StringValue(addOn.Summary)
+	plan.TerraformNoCodeModuleSource = types.StringValue(addOn.TerraformNocodeModule.Source)
 
 	plan.Description = types.StringValue(addOn.Description)
 	// set plan.description if it's not null or addOn.description is not empty
@@ -735,18 +696,6 @@ func (r *AddOnResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 	plan.Labels = labels
-
-	if addOn.TerraformNocodeModule != nil {
-		tfcNoCode := &tfcNoCodeModule{
-			Source:  types.StringValue(addOn.TerraformNocodeModule.Source),
-			Version: types.StringValue(addOn.TerraformNocodeModule.Version),
-		}
-		plan.TerraformNoCodeModule, diags = types.ObjectValueFrom(ctx, tfcNoCode.attrTypes(), tfcNoCode)
-		resp.Diagnostics.Append(diags...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-	}
 
 	// Display the reference to the Definition in the plan
 	if addOn.Definition != nil {
@@ -786,6 +735,7 @@ func (r *AddOnResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	} else {
 		plan.OutputValues = types.ListNull(types.ObjectType{AttrTypes: outputValue{}.attrTypes()})
 	}
+
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -850,6 +800,8 @@ func (r *AddOnResource) ImportState(ctx context.Context, req resource.ImportStat
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
+// readOutputs accepts a list of output values in the type returned by the Waypoint API and returns a list of output
+// values in the custom outputValue type used in this provider
 func readOutputs(ovs []*waypoint_models.HashicorpCloudWaypointTFOutputValue) []*outputValue {
 	ol := make([]*outputValue, len(ovs))
 	for i, ov := range ovs {
